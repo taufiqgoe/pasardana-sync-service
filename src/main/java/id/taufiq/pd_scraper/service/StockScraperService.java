@@ -1,0 +1,232 @@
+package id.taufiq.pd_scraper.service;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import id.taufiq.pd_scraper.model.dao.CodeDate;
+import id.taufiq.pd_scraper.model.dao.CodePeriodDate;
+import id.taufiq.pd_scraper.model.dto.GetStockReport;
+import id.taufiq.pd_scraper.model.entity.Stock;
+import id.taufiq.pd_scraper.model.entity.StockDaily;
+import id.taufiq.pd_scraper.model.entity.StockReport;
+import id.taufiq.pd_scraper.repository.CustomRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClient;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.function.Function;
+
+import static java.util.stream.Collectors.toMap;
+
+@Slf4j
+@Service
+public class StockScraperService {
+
+    private final ObjectMapper objectMapper;
+    private final RestClient restClient;
+    private final CustomRepository customRepository;
+
+    public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository) {
+        this.objectMapper = objectMapper;
+        this.restClient = restClient;
+        this.customRepository = customRepository;
+    }
+
+    @Scheduled(cron = "#{@appProperties.baseProductSyncCron}")
+    private void scrapeStocks() {
+        LocalDateTime startTime = LocalDateTime.now();
+        try {
+            String getAll = get("https://pasardana.id/api/StockSearchResult/GetAll?pageBegin=1&pageLength=9000&sortField=Code&sortOrder=ASC");
+            List<Stock> stocks = objectMapper.readValue(getAll, new TypeReference<>() {
+            });
+
+            for (Stock stock : stocks) {
+                boolean exists = customRepository.existsById(stock.getCode(), Stock.class);
+                if (exists) {
+                    customRepository.update(stock);
+                } else {
+                    customRepository.insert(stock);
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to process stock", e);
+        }
+        logEndTime("stock", startTime);
+    }
+
+    @Scheduled(cron = "#{@appProperties.syncCron}")
+    private void scrapeStockDaily() {
+        LocalDateTime startTime = LocalDateTime.now();
+        try {
+            List<Stock> stocks = customRepository.findAll(Stock.class);
+            List<CodeDate> maxDatePerCode = customRepository.findAllStockDailyMaxDatePerCode();
+
+            LocalDate now = LocalDate.now();
+
+            stocks.parallelStream().forEach(stock -> {
+                try {
+                    String code = stock.getCode();
+                    LocalDate startDate = maxDatePerCode.stream()
+                            .filter(it -> it.getCode().equalsIgnoreCase(code))
+                            .findFirst()
+                            .map(CodeDate::getDate)
+                            .orElse(LocalDate.of(1995, 1, 1))
+                            .plusDays(1);
+
+                    LocalDate endDate = LocalDate.now().plusDays(1);
+                    String stockDataRaw = get("https://pasardana.id/api/StockAPI/GetStockData?code=%s&datestart=%s&dateend=%s".formatted(code, startDate, endDate));
+                    List<StockDaily> stockDailies = objectMapper.readValue(stockDataRaw, new TypeReference<>() {
+                    });
+
+                    List<StockDaily> uniqueStockDailies = new ArrayList<>(
+                            stockDailies.stream()
+                                    .collect(toMap(
+                                            sd -> sd.getCode() + "|" + sd.getDate(),
+                                            Function.identity(),
+                                            (existing, replacement) -> existing
+                                    ))
+                                    .values());
+
+                    uniqueStockDailies.forEach(it -> it.setCreatedAt(now));
+
+                    log.debug("Inserting {} stock daily data for code {}", uniqueStockDailies.size(), code);
+                    customRepository.insertAll(uniqueStockDailies);
+                } catch (Exception e) {
+                    log.error("Failed to fetch stock daily for code {}", stock.getCode());
+                }
+            });
+        } catch (Exception e) {
+            log.error("Failed to process stock daily", e);
+        }
+        logEndTime("stock daily", startTime);
+    }
+
+    @Scheduled(cron = "#{@appProperties.syncCron}")
+    private void scrapeStockReport() {
+        LocalDateTime startTime = LocalDateTime.now();
+        try {
+            List<String> codes = customRepository.findAll(Stock.class).stream().map(Stock::getCode).toList();
+
+            String periodsRaw = get("https://pasardana.id/api/StockAPI/GetStockReportPeriods");
+            List<String> periods = objectMapper.readValue(periodsRaw, new TypeReference<>() {
+            });
+
+            codes.parallelStream().forEach(code -> {
+                try {
+                    List<String> currentPeriods = customRepository.findAllCurrentStockReportPeriod(code);
+
+                    List<String> missingPeriods = new ArrayList<>();
+                    for (String period : periods) {
+                        if (!currentPeriods.contains(period)) {
+                            missingPeriods.add(period);
+                        }
+                    }
+
+                    String pdStockReportsRaw = get("https://pasardana.id/api/StockAPI/GetStockReports?codes=%s&periods=%s".formatted(code, StringUtils.collectionToCommaDelimitedString(missingPeriods)));
+                    List<GetStockReport> pdStockReports = objectMapper.readValue(pdStockReportsRaw, new TypeReference<>() {
+                    });
+
+                    for (GetStockReport pdStockReport : pdStockReports) {
+                        List<StockReport> stockReports = new ArrayList<>();
+                        for (GetStockReport.Detail detail : pdStockReport.getDetails()) {
+                            StockReport stockReport = new StockReport(UUID.randomUUID().toString(),
+                                    pdStockReport.getCode(),
+                                    pdStockReport.getPeriod(),
+                                    detail.getPropertyId(),
+                                    detail.getValue(),
+                                    pdStockReport.getLastUpdate());
+                            stockReports.add(stockReport);
+                        }
+
+                        log.debug("Inserting {} data code {} period {}", stockReports.size(), code, pdStockReport.getPeriod());
+                        customRepository.insertAll(stockReports);
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to fetch stock report for code {}", code);
+                }
+            });
+        } catch (Exception e) {
+            log.error("Failed to scrape stock report", e);
+        }
+        logEndTime("stock report", startTime);
+    }
+
+    @Scheduled(cron = "#{@appProperties.syncCron}")
+    public void scrapeStockReportUpdate() {
+        LocalDateTime startTime = LocalDateTime.now();
+        try {
+            List<String> codes = customRepository.findAll(Stock.class).stream().map(Stock::getCode).toList();
+
+            String periodsRaw = get("https://pasardana.id/api/StockAPI/GetStockReportPeriods");
+            List<String> periods = objectMapper.readValue(periodsRaw, new TypeReference<>() {
+            });
+
+            List<CodePeriodDate> stockReportMaxUpdateDatePerCode = customRepository.findAllStockReportMaxUpdateDatePerCode();
+
+            codes.parallelStream().forEach(code -> {
+                try {
+                    String pdStockReportsRaw = get("https://pasardana.id/api/StockAPI/GetStockReports?codes=%s&periods=%s".formatted(code, StringUtils.collectionToCommaDelimitedString(periods)));
+                    List<GetStockReport> pdStockReports = objectMapper.readValue(pdStockReportsRaw, new TypeReference<>() {
+                    });
+                    for (String period : periods) {
+                        GetStockReport pdStockReport = pdStockReports.stream().filter(it -> it.getCode().equalsIgnoreCase(code) && it.getPeriod().equalsIgnoreCase(period)).findFirst().orElse(null);
+                        CodePeriodDate codeDate = stockReportMaxUpdateDatePerCode.stream().filter(it -> it.getCode().equalsIgnoreCase(code) && it.getPeriod().equalsIgnoreCase(period)).findFirst().orElse(null);
+                        if (pdStockReport != null && pdStockReport.getLastUpdate() != null && codeDate != null) {
+                            if (!codeDate.getDate().isEqual(pdStockReport.getLastUpdate().toLocalDate())) {
+                                log.debug("Updating stock reports for code {} period {} from date {} to date {}", code, period, codeDate.getDate(), pdStockReport.getLastUpdate().toLocalDate());
+                                for (GetStockReport.Detail detail : pdStockReport.getDetails()) {
+                                    try {
+                                        customRepository.updateStockReportValueAndLastUpdateByCodeAndPeriodAndPropertyId(detail.getValue(), pdStockReport.getLastUpdate(), pdStockReport.getCode(), pdStockReport.getPeriod(), detail.getPropertyId());
+                                    } catch (Exception e) {
+                                        log.error("Failed to update stock report for code {} period {} property id {}", pdStockReport.getCode(), pdStockReport.getPeriod(), detail.getPropertyId());
+                                    }
+                                }
+                            } else {
+                                log.debug("Skipping stock reports for code {} period {} data is up to date {}", code, period, codeDate.getDate());
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to fetch stock report update for code {} ", code, e);
+                }
+            });
+        } catch (Exception e) {
+            log.error("Failed to scrape stock report update", e);
+        }
+        logEndTime("stock report update", startTime);
+    }
+
+    private String get(String endpoint) {
+        ResponseEntity<byte[]> entity = restClient.get()
+                .uri(endpoint)
+                .retrieve()
+                .toEntity(byte[].class);
+
+        if (entity.getBody() == null) {
+            throw new RuntimeException();
+        }
+
+        return new String(entity.getBody(), StandardCharsets.UTF_8);
+    }
+
+    private void logEndTime(String event, LocalDateTime startTime) {
+        LocalDateTime endTime = LocalDateTime.now();
+        Duration duration = Duration.between(startTime, endTime);
+
+        long minutes = duration.toMinutes();
+        long seconds = duration.minusMinutes(minutes).getSeconds();
+
+        log.info("Finished scraping {} with time spent: {} minutes {} seconds",
+                event, minutes, seconds);
+    }
+}
