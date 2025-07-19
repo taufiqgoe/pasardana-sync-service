@@ -1,7 +1,9 @@
 package id.taufiq.pd_scraper.repository;
 
 import id.taufiq.pd_scraper.model.dao.CodeDate;
+import id.taufiq.pd_scraper.model.dao.CodePeriod;
 import id.taufiq.pd_scraper.model.dao.CodePeriodDate;
+import id.taufiq.pd_scraper.model.dao.StockReportUpdate;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -10,6 +12,8 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Repository
 public class CustomRepository {
@@ -67,9 +71,16 @@ public class CustomRepository {
         return jdbcTemplate.query(query, new BeanPropertyRowMapper<>(CodeDate.class));
     }
 
-    public List<String> findAllCurrentStockReportPeriod(String code) {
-        String query = "select distinct \"period\" from stock_reports where code = ? order by \"period\"";
-        return jdbcTemplate.queryForList(query, String.class, code);
+    public Map<String, List<String>> findAllCurrentStockReportPeriod() {
+        String query = "SELECT code, string_agg(DISTINCT \"period\", ',' ORDER BY \"period\") AS \"period\" FROM stock_reports GROUP BY code ORDER BY code";
+        List<CodePeriod> currentPeriods = jdbcTemplate.queryForList(query, CodePeriod.class);
+
+        return currentPeriods.stream()
+                .collect(Collectors.toMap(
+                        CodePeriod::getCode,
+                        cp -> List.of(cp.getPeriod().split(",")),
+                        (existing, replacement) -> existing
+                ));
     }
 
     public void updateStockReportValueAndLastUpdateByCodeAndPeriodAndPropertyId(BigDecimal value, LocalDateTime lastUpdate, String code, String period, Integer propertyId) {
@@ -84,5 +95,23 @@ public class CustomRepository {
                   AND property_id = ?
                 """;
         jdbcTemplate.update(query, value, lastUpdate, code, period, propertyId);
+    }
+
+    public void batchUpdateStockReports(List<StockReportUpdate> updates) {
+        String query = """
+                UPDATE public.stock_reports
+                SET value = ?, last_update = ?
+                WHERE code = ? AND "period" = ? AND property_id = ?
+                """;
+
+        jdbcTemplate.batchUpdate(query, updates, updates.size(),
+                (ps, dto) -> {
+                    ps.setBigDecimal(1, dto.getValue());
+                    ps.setObject(2, dto.getLastUpdate());
+                    ps.setString(3, dto.getCode());
+                    ps.setString(4, dto.getPeriod());
+                    ps.setInt(5, dto.getPropertyId());
+                }
+        );
     }
 }

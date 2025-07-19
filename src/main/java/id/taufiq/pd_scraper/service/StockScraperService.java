@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import id.taufiq.pd_scraper.model.dao.CodeDate;
 import id.taufiq.pd_scraper.model.dao.CodePeriodDate;
+import id.taufiq.pd_scraper.model.dao.StockReportUpdate;
 import id.taufiq.pd_scraper.model.dto.GetStockReport;
 import id.taufiq.pd_scraper.model.entity.Stock;
 import id.taufiq.pd_scraper.model.entity.StockDaily;
@@ -22,8 +23,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.toMap;
 
@@ -70,17 +73,15 @@ public class StockScraperService {
         try {
             List<Stock> stocks = customRepository.findAll(Stock.class);
             List<CodeDate> maxDatePerCode = customRepository.findAllStockDailyMaxDatePerCode();
+            Map<String, LocalDate> maxDatePerCodeMap = maxDatePerCode.stream().collect(toMap(CodeDate::getCode, CodeDate::getDate));
 
             LocalDate now = LocalDate.now();
 
             stocks.parallelStream().forEach(stock -> {
                 try {
                     String code = stock.getCode();
-                    LocalDate startDate = maxDatePerCode.stream()
-                            .filter(it -> it.getCode().equalsIgnoreCase(code))
-                            .findFirst()
-                            .map(CodeDate::getDate)
-                            .orElse(LocalDate.of(1995, 1, 1))
+                    LocalDate startDate = maxDatePerCodeMap
+                            .getOrDefault(code, LocalDate.of(1995, 1, 1))
                             .plusDays(1);
 
                     LocalDate endDate = LocalDate.now().plusDays(1);
@@ -121,16 +122,14 @@ public class StockScraperService {
             List<String> periods = objectMapper.readValue(periodsRaw, new TypeReference<>() {
             });
 
+            Map<String, List<String>> currentPeriodsMap = customRepository.findAllCurrentStockReportPeriod();
+
             codes.parallelStream().forEach(code -> {
                 try {
-                    List<String> currentPeriods = customRepository.findAllCurrentStockReportPeriod(code);
-
-                    List<String> missingPeriods = new ArrayList<>();
-                    for (String period : periods) {
-                        if (!currentPeriods.contains(period)) {
-                            missingPeriods.add(period);
-                        }
-                    }
+                    List<String> current = currentPeriodsMap.getOrDefault(code, List.of());
+                    List<String> missingPeriods = periods.stream()
+                            .filter(p -> !current.contains(p))
+                            .toList();
 
                     String pdStockReportsRaw = get("https://pasardana.id/api/StockAPI/GetStockReports?codes=%s&periods=%s".formatted(code, StringUtils.collectionToCommaDelimitedString(missingPeriods)));
                     List<GetStockReport> pdStockReports = objectMapper.readValue(pdStockReportsRaw, new TypeReference<>() {
@@ -173,6 +172,15 @@ public class StockScraperService {
 
             List<CodePeriodDate> stockReportMaxUpdateDatePerCode = customRepository.findAllStockReportMaxUpdateDatePerCode();
 
+            Map<String, Map<String, CodePeriodDate>> stockReportMaxUpdateDatePerCodeMap = stockReportMaxUpdateDatePerCode.stream()
+                    .collect(Collectors.groupingBy(
+                            CodePeriodDate::getCode,
+                            Collectors.toMap(
+                                    CodePeriodDate::getPeriod,
+                                    Function.identity(),
+                                    (object, object2) -> object
+                            )));
+
             codes.parallelStream().forEach(code -> {
                 try {
                     String pdStockReportsRaw = get("https://pasardana.id/api/StockAPI/GetStockReports?codes=%s&periods=%s".formatted(code, StringUtils.collectionToCommaDelimitedString(periods)));
@@ -180,19 +188,21 @@ public class StockScraperService {
                     });
                     for (String period : periods) {
                         GetStockReport pdStockReport = pdStockReports.stream().filter(it -> it.getCode().equalsIgnoreCase(code) && it.getPeriod().equalsIgnoreCase(period)).findFirst().orElse(null);
-                        CodePeriodDate codeDate = stockReportMaxUpdateDatePerCode.stream().filter(it -> it.getCode().equalsIgnoreCase(code) && it.getPeriod().equalsIgnoreCase(period)).findFirst().orElse(null);
+                        CodePeriodDate codeDate = stockReportMaxUpdateDatePerCodeMap.getOrDefault(code, Map.of()).getOrDefault(period, null);
                         if (pdStockReport != null && pdStockReport.getLastUpdate() != null && codeDate != null) {
                             if (!codeDate.getDate().isEqual(pdStockReport.getLastUpdate().toLocalDate())) {
-                                log.debug("Updating stock reports for code {} period {} from date {} to date {}", code, period, codeDate.getDate(), pdStockReport.getLastUpdate().toLocalDate());
-                                for (GetStockReport.Detail detail : pdStockReport.getDetails()) {
-                                    try {
-                                        customRepository.updateStockReportValueAndLastUpdateByCodeAndPeriodAndPropertyId(detail.getValue(), pdStockReport.getLastUpdate(), pdStockReport.getCode(), pdStockReport.getPeriod(), detail.getPropertyId());
-                                    } catch (Exception e) {
-                                        log.error("Failed to update stock report for code {} period {} property id {}", pdStockReport.getCode(), pdStockReport.getPeriod(), detail.getPropertyId());
-                                    }
+                                log.info("Updating stock reports for code {} period {} from date {} to date {}", code, period, codeDate.getDate(), pdStockReport.getLastUpdate().toLocalDate());
+                                List<StockReportUpdate> updates = pdStockReport.getDetails().stream()
+                                        .map(detail -> new StockReportUpdate(detail.getValue(), pdStockReport.getLastUpdate(), pdStockReport.getCode(), pdStockReport.getPeriod(), detail.getPropertyId()))
+                                        .toList();
+
+                                try {
+                                    customRepository.batchUpdateStockReports(updates);
+                                } catch (Exception e) {
+                                    log.error("Failed to update stock report for code {} period {}", pdStockReport.getCode(), pdStockReport.getPeriod());
                                 }
                             } else {
-                                log.debug("Skipping stock reports for code {} period {} data is up to date {}", code, period, codeDate.getDate());
+                                log.info("Skipping stock reports for code {} period {} data is up to date {}", code, period, codeDate.getDate());
                             }
                         }
                     }
