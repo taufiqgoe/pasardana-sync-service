@@ -103,7 +103,7 @@ public class StockScraperService {
                     log.debug("Inserting {} stock daily data for code {}", uniqueStockDailies.size(), code);
                     customRepository.insertAll(uniqueStockDailies);
                 } catch (Exception e) {
-                    log.error("Failed to fetch stock daily for code {}", stock.getCode());
+                    log.warn("Failed to fetch stock daily for code {}", stock.getCode());
                 }
             });
         } catch (Exception e) {
@@ -151,7 +151,7 @@ public class StockScraperService {
                         customRepository.insertAll(stockReports);
                     }
                 } catch (Exception e) {
-                    log.error("Failed to fetch stock report for code {}", code);
+                    log.warn("Failed to fetch stock report for code {}", code);
                 }
             });
         } catch (Exception e) {
@@ -207,7 +207,7 @@ public class StockScraperService {
                         }
                     }
                 } catch (Exception e) {
-                    log.error("Failed to fetch stock report update for code {} ", code, e);
+                    log.warn("Failed to fetch stock report update for code {} ", code, e);
                 }
             });
         } catch (Exception e) {

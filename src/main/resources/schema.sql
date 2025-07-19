@@ -1,16 +1,16 @@
-CREATE TABLE public.stocks (
+CREATE TABLE IF NOT EXISTS public.stocks (
 	code varchar NOT NULL,
 	name varchar NOT NULL,
 	CONSTRAINT stocks_pk PRIMARY KEY (code)
 );
 
-CREATE TABLE public.stock_report_property (
+CREATE TABLE IF NOT EXISTS public.stock_report_property (
 	id numeric NOT NULL,
 	"name" text NULL,
 	CONSTRAINT stock_report_property_pk PRIMARY KEY (id)
 );
 
-CREATE TABLE public.stock_reports (
+CREATE TABLE IF NOT EXISTS public.stock_reports (
 	id text NOT NULL,
 	code text NOT NULL,
 	"period" text NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE public.stock_reports (
 	CONSTRAINT stock_reports_stocks_fk FOREIGN KEY (code) REFERENCES public.stocks(code)
 );
 
-CREATE TABLE public.stock_daily (
+CREATE TABLE IF NOT EXISTS public.stock_daily (
 	id text DEFAULT gen_random_uuid() NOT NULL,
 	code text NOT NULL,
 	opening_price int4 NULL,
@@ -40,23 +40,16 @@ CREATE TABLE public.stock_daily (
 );
 --CREATE INDEX stock_daily_date_idx ON public.stock_daily USING btree (date);
 
-CREATE TABLE public.fund_type (
-	id numeric NOT NULL,
-	"name" text NOT NULL,
-	CONSTRAINT fund_type_pk PRIMARY KEY (id)
-);
-
-CREATE TABLE public.funds (
+CREATE TABLE IF NOT EXISTS public.funds (
 	id int2 NOT NULL,
 	"name" varchar NOT NULL,
 	"type" numeric NULL,
 	active bool NULL,
 	sharia bool NULL,
-	CONSTRAINT funds_pk PRIMARY KEY (id),
-	CONSTRAINT funds_fund_type_fk FOREIGN KEY ("type") REFERENCES public.fund_type(id)
+	CONSTRAINT funds_pk PRIMARY KEY (id)
 );
 
-CREATE TABLE public.fund_daily (
+CREATE TABLE IF NOT EXISTS public.fund_daily (
 	id varchar DEFAULT gen_random_uuid() NOT NULL,
 	fund_id int2 NOT NULL,
 	value numeric NULL,
@@ -68,7 +61,7 @@ CREATE TABLE public.fund_daily (
 );
 --CREATE INDEX fund_daily_date_idx ON public.fund_daily USING btree (date);
 
-CREATE TABLE public.fund_aum (
+CREATE TABLE IF NOT EXISTS public.fund_aum (
 	id text NOT NULL,
 	fund_id int2 NOT NULL,
 	value numeric NULL,
@@ -76,7 +69,7 @@ CREATE TABLE public.fund_aum (
 	CONSTRAINT fund_nav_pk PRIMARY KEY (id)
 );
 
-CREATE TABLE public.fund_unit (
+CREATE TABLE IF NOT EXISTS public.fund_unit (
 	id text NOT NULL,
 	fund_id int2 NOT NULL,
 	value numeric NULL,

@@ -18,8 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -46,18 +46,28 @@ public class FundScraperService {
                     .sorted(Comparator.comparing(Fund::getId))
                     .toList();
 
-            funds.parallelStream().forEach(fund -> {
+            Set<Integer> existingFundIds = customRepository.findAllExistingFundIds();
+
+            List<Fund> updateFunds = new ArrayList<>();
+            List<Fund> insertFunds = new ArrayList<>();
+
+            funds.forEach(fund -> {
                 try {
-                    boolean exists = customRepository.existsById(fund.getId(), Fund.class);
+                    boolean exists = existingFundIds.contains(fund.getId());
                     if (exists) {
-                        customRepository.update(fund);
+                        log.debug("Updating fund {}", fund.getId());
+                        updateFunds.add(fund);
                     } else {
-                        customRepository.insert(fund);
+                        log.debug("Inserting fund {}", fund.getId());
+                        insertFunds.add(fund);
                     }
                 } catch (Exception e) {
-                    log.error("Failed to upsert fund for id {}", fund.getId(), e);
+                    log.warn("Failed to upsert fund for id {}", fund.getId(), e);
                 }
             });
+
+            customRepository.updateAll(updateFunds);
+            customRepository.insertAll(insertFunds);
         } catch (Exception e) {
             log.error("Failed to scrape funds", e);
         }
@@ -71,15 +81,14 @@ public class FundScraperService {
             List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
 
             List<CodeDate> maxDatePerId = customRepository.findAllFundDailyMaxDatePerId();
+            Map<Integer, LocalDate> maxDatePerIdMap = maxDatePerId.stream()
+                    .collect(Collectors.toMap(it -> Integer.valueOf(it.getCode()), CodeDate::getDate, (a, b) -> a));
 
             LocalDate endDate = LocalDate.now().plusDays(1);
 
             fundIds.parallelStream().forEach(fundId -> {
-                LocalDate startDate = maxDatePerId.stream()
-                        .filter(it -> it.getCode().equalsIgnoreCase(fundId.toString()))
-                        .findFirst()
-                        .map(CodeDate::getDate)
-                        .orElse(LocalDate.of(2000, 1, 1))
+                LocalDate startDate = maxDatePerIdMap
+                        .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
                         .plusDays(1);
 
                 try {
@@ -94,7 +103,7 @@ public class FundScraperService {
                         customRepository.insertAll(fundDailies);
                     }
                 } catch (Exception e) {
-                    log.error("Failed to fetch fund daily data for id {}", fundId, e);
+                    log.warn("Failed to fetch fund daily data for id {}", fundId, e);
                 }
             });
         } catch (Exception e) {
@@ -110,16 +119,15 @@ public class FundScraperService {
             List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
 
             List<CodeDate> maxDatePerId = customRepository.findAllFundNavMaxDatePerId();
+            Map<Integer, LocalDate> maxDatePerIdMap = maxDatePerId.stream()
+                    .collect(Collectors.toMap(it -> Integer.valueOf(it.getCode()), CodeDate::getDate, (a, b) -> a));
 
             LocalDate endDate = LocalDate.now().plusDays(1);
 
             fundIds.parallelStream().forEach(fundId -> {
                 try {
-                    LocalDate startDate = maxDatePerId.stream()
-                            .filter(it -> it.getCode().equalsIgnoreCase(fundId.toString()))
-                            .findFirst()
-                            .map(CodeDate::getDate)
-                            .orElse(LocalDate.of(2000, 1, 1))
+                    LocalDate startDate = maxDatePerIdMap
+                            .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
                             .plusDays(1);
 
                     String fundAumRaw = get("https://pasardana.id/api/FundAPI/GetFundAUMHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s"
@@ -133,7 +141,7 @@ public class FundScraperService {
                         customRepository.insertAll(fundAum);
                     }
                 } catch (Exception e) {
-                    log.error("Failed to fetch fund aum data for id {}", fundId, e);
+                    log.warn("Failed to fetch fund aum data for id {}", fundId, e);
                 }
             });
         } catch (Exception e) {
@@ -149,16 +157,15 @@ public class FundScraperService {
             List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
 
             List<CodeDate> maxDatePerId = customRepository.findAllFundUnitMaxDatePerId();
+            Map<Integer, LocalDate> maxDatePerIdMap = maxDatePerId.stream()
+                    .collect(Collectors.toMap(it -> Integer.valueOf(it.getCode()), CodeDate::getDate, (a, b) -> a));
 
             LocalDate endDate = LocalDate.now().plusDays(1);
 
             fundIds.parallelStream().forEach(fundId -> {
                 try {
-                    LocalDate startDate = maxDatePerId.stream()
-                            .filter(it -> it.getCode().equalsIgnoreCase(fundId.toString()))
-                            .findFirst()
-                            .map(CodeDate::getDate)
-                            .orElse(LocalDate.of(2000, 1, 1))
+                    LocalDate startDate = maxDatePerIdMap
+                            .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
                             .plusDays(1);
 
                     String fundUnitRaw = get("https://pasardana.id/api/FundAPI/GetFundUPHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s"
@@ -172,7 +179,7 @@ public class FundScraperService {
                         customRepository.insertAll(fundUnit);
                     }
                 } catch (Exception e) {
-                    log.error("Failed to fetch fund unit data for id {}", fundId, e);
+                    log.warn("Failed to fetch fund unit data for id {}", fundId, e);
                 }
             });
         } catch (Exception e) {

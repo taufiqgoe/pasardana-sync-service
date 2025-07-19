@@ -9,10 +9,10 @@ import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Repository
@@ -38,12 +38,21 @@ public class CustomRepository {
         jdbcAggregateTemplate.insertAll(entities);
     }
 
+    public <T> void updateAll(List<T> entities) {
+        jdbcAggregateTemplate.updateAll(entities);
+    }
+
     public <T> List<T> findAll(Class<T> type) {
         return jdbcAggregateTemplate.findAll(type);
     }
 
     public <T> boolean existsById(Object id, Class<T> type) {
         return jdbcAggregateTemplate.existsById(id, type);
+    }
+
+    public Set<Integer> findAllExistingFundIds() {
+        String query = "select distinct id from funds";
+        return new HashSet<>(jdbcTemplate.queryForList(query, Integer.class));
     }
 
     public List<CodeDate> findAllStockDailyMaxDatePerCode() {
@@ -81,20 +90,6 @@ public class CustomRepository {
                         cp -> List.of(cp.getPeriod().split(",")),
                         (existing, replacement) -> existing
                 ));
-    }
-
-    public void updateStockReportValueAndLastUpdateByCodeAndPeriodAndPropertyId(BigDecimal value, LocalDateTime lastUpdate, String code, String period, Integer propertyId) {
-        String query = """
-                UPDATE public.stock_reports
-                SET
-                  value = ?,
-                  last_update = ?
-                WHERE
-                  code = ?
-                  AND "period" = ?
-                  AND property_id = ?
-                """;
-        jdbcTemplate.update(query, value, lastUpdate, code, period, propertyId);
     }
 
     public void batchUpdateStockReports(List<StockReportUpdate> updates) {
