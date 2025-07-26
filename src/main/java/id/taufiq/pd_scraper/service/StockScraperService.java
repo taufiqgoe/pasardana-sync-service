@@ -46,17 +46,21 @@ public class StockScraperService {
 
     @Scheduled(cron = "#{@appProperties.baseProductSyncCron}")
     private void scrapeStocks() {
+        log.info("Starting to scrape stocks");
         LocalDateTime startTime = LocalDateTime.now();
         try {
             String getAll = get("https://pasardana.id/api/StockSearchResult/GetAll?pageBegin=1&pageLength=9000&sortField=Code&sortOrder=ASC");
             List<Stock> stocks = objectMapper.readValue(getAll, new TypeReference<>() {
             });
+            log.info("Found {} stocks", stocks.size());
 
             for (Stock stock : stocks) {
                 boolean exists = customRepository.existsById(stock.getCode(), Stock.class);
                 if (exists) {
+                    log.debug("Updating stock {}", stock.getCode());
                     customRepository.update(stock);
                 } else {
+                    log.debug("Inserting stock {}", stock.getCode());
                     customRepository.insert(stock);
                 }
             }
@@ -69,11 +73,14 @@ public class StockScraperService {
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
     private void scrapeStockDaily() {
+        log.info("Starting to scrape stock daily");
         LocalDateTime startTime = LocalDateTime.now();
         try {
             List<Stock> stocks = customRepository.findAll(Stock.class);
+            log.info("Found {} stocks to scrape for daily data", stocks.size());
             List<CodeDate> maxDatePerCode = customRepository.findAllStockDailyMaxDatePerCode();
             Map<String, LocalDate> maxDatePerCodeMap = maxDatePerCode.stream().collect(toMap(CodeDate::getCode, CodeDate::getDate));
+            log.info("Found {} existing daily stock data", maxDatePerCode.size());
 
             LocalDate now = LocalDate.now();
 
@@ -85,6 +92,7 @@ public class StockScraperService {
                             .plusDays(1);
 
                     LocalDate endDate = LocalDate.now().plusDays(1);
+                    log.debug("Scraping stock daily for code {} from {} to {}", code, startDate, endDate);
                     String stockDataRaw = get("https://pasardana.id/api/StockAPI/GetStockData?code=%s&datestart=%s&dateend=%s".formatted(code, startDate, endDate));
                     List<StockDaily> stockDailies = objectMapper.readValue(stockDataRaw, new TypeReference<>() {
                     });
@@ -114,15 +122,19 @@ public class StockScraperService {
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
     private void scrapeStockReport() {
+        log.info("Starting to scrape stock report");
         LocalDateTime startTime = LocalDateTime.now();
         try {
             List<String> codes = customRepository.findAll(Stock.class).stream().map(Stock::getCode).toList();
+            log.info("Found {} stock codes to scrape for reports", codes.size());
 
             String periodsRaw = get("https://pasardana.id/api/StockAPI/GetStockReportPeriods");
             List<String> periods = objectMapper.readValue(periodsRaw, new TypeReference<>() {
             });
+            log.info("Found {} report periods", periods.size());
 
             Map<String, List<String>> currentPeriodsMap = customRepository.findAllCurrentStockReportPeriod();
+            log.info("Found {} existing stock reports", currentPeriodsMap.size());
 
             codes.parallelStream().forEach(code -> {
                 try {
@@ -130,6 +142,11 @@ public class StockScraperService {
                     List<String> missingPeriods = periods.stream()
                             .filter(p -> !current.contains(p))
                             .toList();
+                    log.debug("Found {} missing periods for code {}", missingPeriods.size(), code);
+
+                    if (missingPeriods.isEmpty()) {
+                        return;
+                    }
 
                     String pdStockReportsRaw = get("https://pasardana.id/api/StockAPI/GetStockReports?codes=%s&periods=%s".formatted(code, StringUtils.collectionToCommaDelimitedString(missingPeriods)));
                     List<GetStockReport> pdStockReports = objectMapper.readValue(pdStockReportsRaw, new TypeReference<>() {
@@ -162,15 +179,19 @@ public class StockScraperService {
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
     public void scrapeStockReportUpdate() {
+        log.info("Starting to scrape stock report update");
         LocalDateTime startTime = LocalDateTime.now();
         try {
             List<String> codes = customRepository.findAll(Stock.class).stream().map(Stock::getCode).toList();
+            log.info("Found {} stock codes to check for report updates", codes.size());
 
             String periodsRaw = get("https://pasardana.id/api/StockAPI/GetStockReportPeriods");
             List<String> periods = objectMapper.readValue(periodsRaw, new TypeReference<>() {
             });
+            log.info("Found {} report periods to check", periods.size());
 
             List<CodePeriodDate> stockReportMaxUpdateDatePerCode = customRepository.findAllStockReportMaxUpdateDatePerCode();
+            log.info("Found {} existing stock reports to check for updates", stockReportMaxUpdateDatePerCode.size());
 
             Map<String, Map<String, CodePeriodDate>> stockReportMaxUpdateDatePerCodeMap = stockReportMaxUpdateDatePerCode.stream()
                     .collect(Collectors.groupingBy(
@@ -191,7 +212,7 @@ public class StockScraperService {
                         CodePeriodDate codeDate = stockReportMaxUpdateDatePerCodeMap.getOrDefault(code, Map.of()).getOrDefault(period, null);
                         if (pdStockReport != null && pdStockReport.getLastUpdate() != null && codeDate != null) {
                             if (!codeDate.getDate().isEqual(pdStockReport.getLastUpdate().toLocalDate())) {
-                                log.info("Updating stock reports for code {} period {} from date {} to date {}", code, period, codeDate.getDate(), pdStockReport.getLastUpdate().toLocalDate());
+                                log.debug("Updating stock reports for code {} period {} from date {} to date {}", code, period, codeDate.getDate(), pdStockReport.getLastUpdate().toLocalDate());
                                 List<StockReportUpdate> updates = pdStockReport.getDetails().stream()
                                         .map(detail -> new StockReportUpdate(detail.getValue(), pdStockReport.getLastUpdate(), pdStockReport.getCode(), pdStockReport.getPeriod(), detail.getPropertyId()))
                                         .toList();
@@ -202,7 +223,7 @@ public class StockScraperService {
                                     log.error("Failed to update stock report for code {} period {}", pdStockReport.getCode(), pdStockReport.getPeriod());
                                 }
                             } else {
-                                log.info("Skipping stock reports for code {} period {} data is up to date {}", code, period, codeDate.getDate());
+                                log.debug("Skipping stock reports for code {} period {} data is up to date {}", code, period, codeDate.getDate());
                             }
                         }
                     }

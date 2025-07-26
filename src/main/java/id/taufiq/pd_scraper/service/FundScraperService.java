@@ -37,6 +37,7 @@ public class FundScraperService {
 
     @Scheduled(cron = "#{@appProperties.baseProductSyncCron}")
     private void scrapeFunds() {
+        log.info("Starting to scrape funds");
         LocalDateTime startTime = LocalDateTime.now();
         try {
             String getAll = get("https://pasardana.id/api/FundAPI/SearchFund");
@@ -45,8 +46,10 @@ public class FundScraperService {
                     .filter(it -> it.getId() != null && it.getId() > 0)
                     .sorted(Comparator.comparing(Fund::getId))
                     .toList();
+            log.info("Found {} funds", funds.size());
 
             Set<Integer> existingFundIds = customRepository.findAllExistingFundIds();
+            log.info("Found {} existing funds", existingFundIds.size());
 
             List<Fund> updateFunds = new ArrayList<>();
             List<Fund> insertFunds = new ArrayList<>();
@@ -66,6 +69,7 @@ public class FundScraperService {
                 }
             });
 
+            log.info("Updating {} funds and inserting {} funds", updateFunds.size(), insertFunds.size());
             customRepository.updateAll(updateFunds);
             customRepository.insertAll(insertFunds);
         } catch (Exception e) {
@@ -76,13 +80,16 @@ public class FundScraperService {
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
     private void scrapeAllFundNavDaily() {
+        log.info("Starting to scrape all fund nav daily");
         LocalDateTime startTime = LocalDateTime.now();
         try {
             List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
+            log.info("Found {} funds to scrape for daily nav", fundIds.size());
 
             List<CodeDate> maxDatePerId = customRepository.findAllFundDailyMaxDatePerId();
             Map<Integer, LocalDate> maxDatePerIdMap = maxDatePerId.stream()
                     .collect(Collectors.toMap(it -> Integer.valueOf(it.getCode()), CodeDate::getDate, (a, b) -> a));
+            log.info("Found {} existing daily nav data", maxDatePerId.size());
 
             LocalDate endDate = LocalDate.now().plusDays(1);
 
@@ -92,6 +99,7 @@ public class FundScraperService {
                         .plusDays(1);
 
                 try {
+                    log.debug("Scraping fund nav for fund id {} from {} to {}", fundId, startDate, endDate);
                     String fundNav = get("https://pasardana.id/api/FundAPI/GetFundNAVHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s"
                             .formatted(fundId, startDate, endDate));
 
@@ -114,13 +122,16 @@ public class FundScraperService {
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
     private void scrapeAllFundAumDaily() {
+        log.info("Starting to scrape all fund aum daily");
         LocalDateTime startTime = LocalDateTime.now();
         try {
             List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
+            log.info("Found {} funds to scrape for daily aum", fundIds.size());
 
             List<CodeDate> maxDatePerId = customRepository.findAllFundNavMaxDatePerId();
             Map<Integer, LocalDate> maxDatePerIdMap = maxDatePerId.stream()
                     .collect(Collectors.toMap(it -> Integer.valueOf(it.getCode()), CodeDate::getDate, (a, b) -> a));
+            log.info("Found {} existing daily aum data", maxDatePerId.size());
 
             LocalDate endDate = LocalDate.now().plusDays(1);
 
@@ -130,6 +141,7 @@ public class FundScraperService {
                             .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
                             .plusDays(1);
 
+                    log.debug("Scraping fund aum for fund id {} from {} to {}", fundId, startDate, endDate);
                     String fundAumRaw = get("https://pasardana.id/api/FundAPI/GetFundAUMHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s"
                             .formatted(fundId, startDate, endDate));
 
@@ -152,13 +164,16 @@ public class FundScraperService {
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
     private void scrapeAllFundUnitDaily() {
+        log.info("Starting to scrape all fund unit daily");
         LocalDateTime startTime = LocalDateTime.now();
         try {
             List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
+            log.info("Found {} funds to scrape for daily unit", fundIds.size());
 
             List<CodeDate> maxDatePerId = customRepository.findAllFundUnitMaxDatePerId();
             Map<Integer, LocalDate> maxDatePerIdMap = maxDatePerId.stream()
                     .collect(Collectors.toMap(it -> Integer.valueOf(it.getCode()), CodeDate::getDate, (a, b) -> a));
+            log.info("Found {} existing daily unit data", maxDatePerId.size());
 
             LocalDate endDate = LocalDate.now().plusDays(1);
 
@@ -168,6 +183,7 @@ public class FundScraperService {
                             .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
                             .plusDays(1);
 
+                    log.debug("Scraping fund unit for fund id {} from {} to {}", fundId, startDate, endDate);
                     String fundUnitRaw = get("https://pasardana.id/api/FundAPI/GetFundUPHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s"
                             .formatted(fundId, startDate, endDate));
 
