@@ -4,25 +4,6 @@ CREATE TABLE IF NOT EXISTS public.stocks (
 	CONSTRAINT stocks_pk PRIMARY KEY (code)
 );
 
-CREATE TABLE IF NOT EXISTS public.stock_report_property (
-	id numeric NOT NULL,
-	"name" text NULL,
-	CONSTRAINT stock_report_property_pk PRIMARY KEY (id)
-);
-
-CREATE TABLE IF NOT EXISTS public.stock_reports (
-	id text NOT NULL,
-	code text NOT NULL,
-	"period" text NOT NULL,
-	property_id numeric NOT NULL,
-	value numeric NULL,
-	last_update timestamp NOT NULL,
-	CONSTRAINT stock_reports_pkey PRIMARY KEY (id),
-	CONSTRAINT stock_reports_unique UNIQUE (code, period, property_id),
-	CONSTRAINT stock_reports_property_id_fk FOREIGN KEY (property_id) REFERENCES public.stock_report_property(id),
-	CONSTRAINT stock_reports_stocks_fk FOREIGN KEY (code) REFERENCES public.stocks(code)
-);
-
 CREATE TABLE IF NOT EXISTS public.stock_daily (
 	id text DEFAULT gen_random_uuid() NOT NULL,
 	code text NOT NULL,
@@ -35,8 +16,7 @@ CREATE TABLE IF NOT EXISTS public.stock_daily (
 	"date" date NOT NULL,
 	created_at date NULL,
 	CONSTRAINT stock_daily_pkey PRIMARY KEY (id),
-	CONSTRAINT stock_daily_unique UNIQUE (code, date),
-	CONSTRAINT stock_daily_stocks_fk FOREIGN KEY (code) REFERENCES public.stocks(code)
+	CONSTRAINT stock_daily_unique UNIQUE (code, date)
 );
 --CREATE INDEX stock_daily_date_idx ON public.stock_daily USING btree (date);
 
@@ -56,8 +36,7 @@ CREATE TABLE IF NOT EXISTS public.fund_daily (
 	daily_return numeric NULL,
 	"date" date NOT NULL,
 	CONSTRAINT fund_daily_pk PRIMARY KEY (id),
-	CONSTRAINT fund_daily_unique UNIQUE (fund_id, date),
-	CONSTRAINT fund_daily_funds_fk FOREIGN KEY (fund_id) REFERENCES public.funds(id)
+	CONSTRAINT fund_daily_unique UNIQUE (fund_id, date)
 );
 --CREATE INDEX fund_daily_date_idx ON public.fund_daily USING btree (date);
 

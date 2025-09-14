@@ -17,6 +17,4 @@ public class AppProperties {
     private String pasardanaPassword;
     @NotBlank
     private String syncCron;
-    @NotBlank
-    private String baseProductSyncCron;
 }

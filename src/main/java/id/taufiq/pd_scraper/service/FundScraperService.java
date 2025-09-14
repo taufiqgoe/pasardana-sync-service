@@ -35,7 +35,15 @@ public class FundScraperService {
         this.customRepository = customRepository;
     }
 
-    @Scheduled(cron = "#{@appProperties.baseProductSyncCron}")
+    @Scheduled(cron = "#{@appProperties.syncCron}")
+    private void scrapeAll() {
+        LocalDateTime startTime = LocalDateTime.now();
+        scrapeFunds();
+        scrapeAllFundNavDaily(startTime);
+        scrapeAllFundAumDaily(startTime);
+        scrapeAllFundUnitDaily(startTime);
+    }
+
     private void scrapeFunds() {
         log.info("Starting to scrape funds");
         LocalDateTime startTime = LocalDateTime.now();
@@ -78,20 +86,16 @@ public class FundScraperService {
         logEndTime("funds", startTime);
     }
 
-    @Scheduled(cron = "#{@appProperties.syncCron}")
-    private void scrapeAllFundNavDaily() {
+    private void scrapeAllFundNavDaily(LocalDateTime startTime) {
         log.info("Starting to scrape all fund nav daily");
-        LocalDateTime startTime = LocalDateTime.now();
+
         try {
             List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
             log.info("Found {} funds to scrape for daily nav", fundIds.size());
 
-            List<CodeDate> maxDatePerId = customRepository.findAllFundDailyMaxDatePerId();
-            Map<Integer, LocalDate> maxDatePerIdMap = maxDatePerId.stream()
-                    .collect(Collectors.toMap(it -> Integer.valueOf(it.getCode()), CodeDate::getDate, (a, b) -> a));
-            log.info("Found {} existing daily nav data", maxDatePerId.size());
+            Map<Integer, LocalDate> maxDatePerIdMap = customRepository.findAllFundDailyMaxDatePerId();
 
-            LocalDate endDate = LocalDate.now().plusDays(1);
+            LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
             fundIds.parallelStream().forEach(fundId -> {
                 LocalDate startDate = maxDatePerIdMap
@@ -120,20 +124,16 @@ public class FundScraperService {
         logEndTime("fund daily data", startTime);
     }
 
-    @Scheduled(cron = "#{@appProperties.syncCron}")
-    private void scrapeAllFundAumDaily() {
+    private void scrapeAllFundAumDaily(LocalDateTime startTime) {
         log.info("Starting to scrape all fund aum daily");
-        LocalDateTime startTime = LocalDateTime.now();
+
         try {
             List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
             log.info("Found {} funds to scrape for daily aum", fundIds.size());
 
-            List<CodeDate> maxDatePerId = customRepository.findAllFundNavMaxDatePerId();
-            Map<Integer, LocalDate> maxDatePerIdMap = maxDatePerId.stream()
-                    .collect(Collectors.toMap(it -> Integer.valueOf(it.getCode()), CodeDate::getDate, (a, b) -> a));
-            log.info("Found {} existing daily aum data", maxDatePerId.size());
+            Map<Integer, LocalDate> maxDatePerIdMap = customRepository.findAllFundAumMaxDatePerId();
 
-            LocalDate endDate = LocalDate.now().plusDays(1);
+            LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
             fundIds.parallelStream().forEach(fundId -> {
                 try {
@@ -162,10 +162,9 @@ public class FundScraperService {
         logEndTime("fund aum data", startTime);
     }
 
-    @Scheduled(cron = "#{@appProperties.syncCron}")
-    private void scrapeAllFundUnitDaily() {
+    private void scrapeAllFundUnitDaily(LocalDateTime startTime) {
         log.info("Starting to scrape all fund unit daily");
-        LocalDateTime startTime = LocalDateTime.now();
+
         try {
             List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
             log.info("Found {} funds to scrape for daily unit", fundIds.size());
@@ -175,7 +174,7 @@ public class FundScraperService {
                     .collect(Collectors.toMap(it -> Integer.valueOf(it.getCode()), CodeDate::getDate, (a, b) -> a));
             log.info("Found {} existing daily unit data", maxDatePerId.size());
 
-            LocalDate endDate = LocalDate.now().plusDays(1);
+            LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
             fundIds.parallelStream().forEach(fundId -> {
                 try {
