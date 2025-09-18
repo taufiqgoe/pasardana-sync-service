@@ -20,6 +20,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
 
 @Slf4j
 @Service
@@ -46,7 +50,7 @@ public class FundScraperService {
         LocalDateTime startTime = LocalDateTime.now();
 
         // fetch fund ids once and pass to downstream methods to avoid repeated DB calls
-        java.util.Set<Integer> allFundIds = null;
+        Set<Integer> allFundIds = null;
         try {
             allFundIds = customRepository.findAllFundIds();
         } catch (Exception e) {
@@ -101,11 +105,11 @@ public class FundScraperService {
         logEndTime("funds", startTime);
     }
 
-    private void scrapeAllFundNavDaily(LocalDateTime startTime, java.util.Set<Integer> fundIdsParam) {
+    private void scrapeAllFundNavDaily(LocalDateTime startTime, Set<Integer> fundIdsParam) {
         log.info("Starting to scrape all fund nav daily");
 
         try {
-            java.util.Set<Integer> fundIds = fundIdsParam;
+            Set<Integer> fundIds = fundIdsParam;
             if (fundIds == null) {
                 fundIds = customRepository.findAllFundIds();
             }
@@ -115,9 +119,9 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            java.util.concurrent.ExecutorService exec = java.util.concurrent.Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+            ExecutorService exec = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
             try {
-                java.util.List<java.util.concurrent.Callable<Void>> tasks = new java.util.ArrayList<>();
+                List<Callable<Void>> tasks = new ArrayList<>();
                 for (Integer fundId : fundIds) {
                     tasks.add(() -> {
                         try {
@@ -142,8 +146,8 @@ public class FundScraperService {
                     });
                 }
 
-                java.util.List<java.util.concurrent.Future<Void>> futures = exec.invokeAll(tasks);
-                for (java.util.concurrent.Future<Void> f : futures) {
+                List<Future<Void>> futures = exec.invokeAll(tasks);
+                for (Future<Void> f : futures) {
                     try { f.get(); } catch (Exception ignored) {}
                 }
             } finally {
@@ -155,11 +159,11 @@ public class FundScraperService {
         logEndTime("fund daily data", startTime);
     }
 
-    private void scrapeAllFundAumDaily(LocalDateTime startTime, java.util.Set<Integer> fundIdsParam) {
+    private void scrapeAllFundAumDaily(LocalDateTime startTime, Set<Integer> fundIdsParam) {
         log.info("Starting to scrape all fund aum daily");
 
         try {
-            java.util.Set<Integer> fundIds = fundIdsParam;
+            Set<Integer> fundIds = fundIdsParam;
             if (fundIds == null) {
                 fundIds = customRepository.findAllFundIds();
             }
@@ -169,9 +173,9 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            java.util.concurrent.ExecutorService exec = java.util.concurrent.Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+            ExecutorService exec = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
             try {
-                java.util.List<java.util.concurrent.Callable<Void>> tasks = new java.util.ArrayList<>();
+                List<Callable<Void>> tasks = new ArrayList<>();
                 for (Integer fundId : fundIds) {
                     tasks.add(() -> {
                         try {
@@ -196,8 +200,8 @@ public class FundScraperService {
                     });
                 }
 
-                java.util.List<java.util.concurrent.Future<Void>> futures = exec.invokeAll(tasks);
-                for (java.util.concurrent.Future<Void> f : futures) {
+                List<Future<Void>> futures = exec.invokeAll(tasks);
+                for (Future<Void> f : futures) {
                     try { f.get(); } catch (Exception ignored) {}
                 }
             } finally {
@@ -209,11 +213,11 @@ public class FundScraperService {
         logEndTime("fund aum data", startTime);
     }
 
-    private void scrapeAllFundUnitDaily(LocalDateTime startTime, java.util.Set<Integer> fundIdsParam) {
+    private void scrapeAllFundUnitDaily(LocalDateTime startTime, Set<Integer> fundIdsParam) {
         log.info("Starting to scrape all fund unit daily");
 
         try {
-            java.util.Set<Integer> fundIds = fundIdsParam;
+            Set<Integer> fundIds = fundIdsParam;
             if (fundIds == null) {
                 fundIds = customRepository.findAllFundIds();
             }
@@ -226,9 +230,9 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            java.util.concurrent.ExecutorService exec = java.util.concurrent.Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+            ExecutorService exec = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
             try {
-                java.util.List<java.util.concurrent.Callable<Void>> tasks = new java.util.ArrayList<>();
+                List<Callable<Void>> tasks = new ArrayList<>();
                 for (Integer fundId : fundIds) {
                     tasks.add(() -> {
                         try {
@@ -253,8 +257,8 @@ public class FundScraperService {
                     });
                 }
 
-                java.util.List<java.util.concurrent.Future<Void>> futures = exec.invokeAll(tasks);
-                for (java.util.concurrent.Future<Void> f : futures) {
+                List<Future<Void>> futures = exec.invokeAll(tasks);
+                for (Future<Void> f : futures) {
                     try { f.get(); } catch (Exception ignored) {}
                 }
             } finally {
