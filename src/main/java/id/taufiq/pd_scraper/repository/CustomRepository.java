@@ -56,14 +56,14 @@ public class CustomRepository {
         return new HashSet<>(jdbcTemplate.queryForList(query, String.class));
     }
 
-    public List<Integer> findAllFundIds() {
+    public java.util.Set<Integer> findAllFundIds() {
         String query = "select id from funds";
-        return jdbcTemplate.queryForList(query, Integer.class);
+        return new java.util.HashSet<>(jdbcTemplate.queryForList(query, Integer.class));
     }
 
-    public List<String> findAllStockCodes() {
+    public java.util.Set<String> findAllStockCodes() {
         String query = "select code from stocks";
-        return jdbcTemplate.queryForList(query, String.class);
+        return new java.util.HashSet<>(jdbcTemplate.queryForList(query, String.class));
     }
 
     public Map<String, LocalDate> findAllStockDailyMaxDatePerCode() {

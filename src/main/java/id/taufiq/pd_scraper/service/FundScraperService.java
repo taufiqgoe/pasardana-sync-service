@@ -33,6 +33,7 @@ public class FundScraperService {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
+    private static final int DEFAULT_SCRAPE_POOL_SIZE = 20;
 
     public FundScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository) {
         this.objectMapper = objectMapper;
@@ -45,7 +46,7 @@ public class FundScraperService {
         LocalDateTime startTime = LocalDateTime.now();
 
         // fetch fund ids once and pass to downstream methods to avoid repeated DB calls
-        List<Integer> allFundIds = null;
+        java.util.Set<Integer> allFundIds = null;
         try {
             allFundIds = customRepository.findAllFundIds();
         } catch (Exception e) {
@@ -100,11 +101,11 @@ public class FundScraperService {
         logEndTime("funds", startTime);
     }
 
-    private void scrapeAllFundNavDaily(LocalDateTime startTime, List<Integer> fundIdsParam) {
+    private void scrapeAllFundNavDaily(LocalDateTime startTime, java.util.Set<Integer> fundIdsParam) {
         log.info("Starting to scrape all fund nav daily");
 
         try {
-            List<Integer> fundIds = fundIdsParam;
+            java.util.Set<Integer> fundIds = fundIdsParam;
             if (fundIds == null) {
                 fundIds = customRepository.findAllFundIds();
             }
@@ -114,37 +115,51 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            fundIds.parallelStream().forEach(fundId -> {
-                LocalDate startDate = maxDatePerIdMap
-                        .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
-                        .plusDays(1);
+            java.util.concurrent.ExecutorService exec = java.util.concurrent.Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+            try {
+                java.util.List<java.util.concurrent.Callable<Void>> tasks = new java.util.ArrayList<>();
+                for (Integer fundId : fundIds) {
+                    tasks.add(() -> {
+                        try {
+                            LocalDate startDate = maxDatePerIdMap
+                                    .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
+                                    .plusDays(1);
 
-                try {
-                    log.debug("Scraping fund nav for fund id {} from {} to {}", fundId, startDate, endDate);
-                    String fundNav = get(String.format(FUND_NAV_HISTORIC_URL, fundId, startDate, endDate));
+                            log.debug("Scraping fund nav for fund id {} from {} to {}", fundId, startDate, endDate);
+                            String fundNav = get(String.format(FUND_NAV_HISTORIC_URL, fundId, startDate, endDate));
 
-                    List<FundDaily> fundDailies = objectMapper.readValue(fundNav, new TypeReference<>() {
+                            List<FundDaily> fundDailies = objectMapper.readValue(fundNav, new TypeReference<>() {
+                            });
+
+                            if (fundDailies != null && !fundDailies.isEmpty()) {
+                                log.debug("Inserting {} fund daily data for id {}", fundDailies.size(), fundId);
+                                customRepository.insertAll(fundDailies);
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to fetch fund daily data for id {}", fundId, e);
+                        }
+                        return null;
                     });
-
-                    if (fundDailies != null && !fundDailies.isEmpty()) {
-                        log.debug("Inserting {} fund daily data for id {}", fundDailies.size(), fundId);
-                        customRepository.insertAll(fundDailies);
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to fetch fund daily data for id {}", fundId, e);
                 }
-            });
+
+                java.util.List<java.util.concurrent.Future<Void>> futures = exec.invokeAll(tasks);
+                for (java.util.concurrent.Future<Void> f : futures) {
+                    try { f.get(); } catch (Exception ignored) {}
+                }
+            } finally {
+                exec.shutdown();
+            }
         } catch (Exception e) {
             log.error("Failed to scrape fund daily data");
         }
         logEndTime("fund daily data", startTime);
     }
 
-    private void scrapeAllFundAumDaily(LocalDateTime startTime, List<Integer> fundIdsParam) {
+    private void scrapeAllFundAumDaily(LocalDateTime startTime, java.util.Set<Integer> fundIdsParam) {
         log.info("Starting to scrape all fund aum daily");
 
         try {
-            List<Integer> fundIds = fundIdsParam;
+            java.util.Set<Integer> fundIds = fundIdsParam;
             if (fundIds == null) {
                 fundIds = customRepository.findAllFundIds();
             }
@@ -154,37 +169,51 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            fundIds.parallelStream().forEach(fundId -> {
-                try {
-                    LocalDate startDate = maxDatePerIdMap
-                            .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
-                            .plusDays(1);
+            java.util.concurrent.ExecutorService exec = java.util.concurrent.Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+            try {
+                java.util.List<java.util.concurrent.Callable<Void>> tasks = new java.util.ArrayList<>();
+                for (Integer fundId : fundIds) {
+                    tasks.add(() -> {
+                        try {
+                            LocalDate startDate = maxDatePerIdMap
+                                    .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
+                                    .plusDays(1);
 
-                    log.debug("Scraping fund aum for fund id {} from {} to {}", fundId, startDate, endDate);
-                    String fundAumRaw = get(String.format(FUND_AUM_HISTORIC_URL, fundId, startDate, endDate));
+                            log.debug("Scraping fund aum for fund id {} from {} to {}", fundId, startDate, endDate);
+                            String fundAumRaw = get(String.format(FUND_AUM_HISTORIC_URL, fundId, startDate, endDate));
 
-                    List<FundAum> fundAum = objectMapper.readValue(fundAumRaw, new TypeReference<>() {
+                            List<FundAum> fundAum = objectMapper.readValue(fundAumRaw, new TypeReference<>() {
+                            });
+
+                            if (fundAum != null && !fundAum.isEmpty()) {
+                                log.debug("Inserting {} fund aum data for id {}", fundAum.size(), fundId);
+                                customRepository.insertAll(fundAum);
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to fetch fund aum data for id {}", fundId, e);
+                        }
+                        return null;
                     });
-
-                    if (fundAum != null && !fundAum.isEmpty()) {
-                        log.debug("Inserting {} fund aum data for id {}", fundAum.size(), fundId);
-                        customRepository.insertAll(fundAum);
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to fetch fund aum data for id {}", fundId, e);
                 }
-            });
+
+                java.util.List<java.util.concurrent.Future<Void>> futures = exec.invokeAll(tasks);
+                for (java.util.concurrent.Future<Void> f : futures) {
+                    try { f.get(); } catch (Exception ignored) {}
+                }
+            } finally {
+                exec.shutdown();
+            }
         } catch (Exception e) {
             log.error("Failed to scrape fund aum data");
         }
         logEndTime("fund aum data", startTime);
     }
 
-    private void scrapeAllFundUnitDaily(LocalDateTime startTime, List<Integer> fundIdsParam) {
+    private void scrapeAllFundUnitDaily(LocalDateTime startTime, java.util.Set<Integer> fundIdsParam) {
         log.info("Starting to scrape all fund unit daily");
 
         try {
-            List<Integer> fundIds = fundIdsParam;
+            java.util.Set<Integer> fundIds = fundIdsParam;
             if (fundIds == null) {
                 fundIds = customRepository.findAllFundIds();
             }
@@ -197,26 +226,40 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            fundIds.parallelStream().forEach(fundId -> {
-                try {
-                    LocalDate startDate = maxDatePerIdMap
-                            .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
-                            .plusDays(1);
+            java.util.concurrent.ExecutorService exec = java.util.concurrent.Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+            try {
+                java.util.List<java.util.concurrent.Callable<Void>> tasks = new java.util.ArrayList<>();
+                for (Integer fundId : fundIds) {
+                    tasks.add(() -> {
+                        try {
+                            LocalDate startDate = maxDatePerIdMap
+                                    .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
+                                    .plusDays(1);
 
-                    log.debug("Scraping fund unit for fund id {} from {} to {}", fundId, startDate, endDate);
-                    String fundUnitRaw = get(String.format(FUND_UNIT_HISTORIC_URL, fundId, startDate, endDate));
+                            log.debug("Scraping fund unit for fund id {} from {} to {}", fundId, startDate, endDate);
+                            String fundUnitRaw = get(String.format(FUND_UNIT_HISTORIC_URL, fundId, startDate, endDate));
 
-                    List<FundUnit> fundUnit = objectMapper.readValue(fundUnitRaw, new TypeReference<>() {
+                            List<FundUnit> fundUnit = objectMapper.readValue(fundUnitRaw, new TypeReference<>() {
+                            });
+
+                            if (fundUnit != null && !fundUnit.isEmpty()) {
+                                log.debug("Inserting {} fund unit data for id {}", fundUnit.size(), fundId);
+                                customRepository.insertAll(fundUnit);
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to fetch fund unit data for id {}", fundId, e);
+                        }
+                        return null;
                     });
-
-                    if (fundUnit != null && !fundUnit.isEmpty()) {
-                        log.debug("Inserting {} fund unit data for id {}", fundUnit.size(), fundId);
-                        customRepository.insertAll(fundUnit);
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to fetch fund unit data for id {}", fundId, e);
                 }
-            });
+
+                java.util.List<java.util.concurrent.Future<Void>> futures = exec.invokeAll(tasks);
+                for (java.util.concurrent.Future<Void> f : futures) {
+                    try { f.get(); } catch (Exception ignored) {}
+                }
+            } finally {
+                exec.shutdown();
+            }
         } catch (Exception e) {
             log.error("Failed to scrape fund unit data");
         }
