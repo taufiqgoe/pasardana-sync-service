@@ -37,9 +37,9 @@ public class StockScraperService {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
-    private final java.util.concurrent.ExecutorService scrapeExecutor;
+    private final org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor;
 
-    public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository, java.util.concurrent.ExecutorService scrapeExecutor) {
+    public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository, org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor) {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
         this.customRepository = customRepository;
@@ -125,7 +125,7 @@ public class StockScraperService {
                 });
             }
 
-                List<Future<Void>> futures = scrapeExecutor.invokeAll(tasks);
+                List<Future<Void>> futures = scrapeExecutor.getThreadPoolExecutor().invokeAll(tasks);
                 for (Future<Void> f : futures) {
                     try { f.get(); } catch (Exception ignored) {}
                 }

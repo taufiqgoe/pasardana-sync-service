@@ -38,9 +38,9 @@ public class FundScraperService {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
-    private final ExecutorService scrapeExecutor;
+    private final org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor;
 
-    public FundScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository, ExecutorService scrapeExecutor) {
+    public FundScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository, org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor) {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
         this.customRepository = customRepository;
@@ -148,7 +148,7 @@ public class FundScraperService {
                     });
                 }
 
-                List<Future<Void>> futures = exec.invokeAll(tasks);
+                List<Future<Void>> futures = scrapeExecutor.getThreadPoolExecutor().invokeAll(tasks);
                 for (Future<Void> f : futures) {
                     try { f.get(); } catch (Exception ignored) {}
                 }
@@ -202,7 +202,7 @@ public class FundScraperService {
                     });
                 }
 
-                List<Future<Void>> futures = exec.invokeAll(tasks);
+                List<Future<Void>> futures = scrapeExecutor.getThreadPoolExecutor().invokeAll(tasks);
                 for (Future<Void> f : futures) {
                     try { f.get(); } catch (Exception ignored) {}
                 }
@@ -261,7 +261,7 @@ public class FundScraperService {
                     });
                 }
 
-                List<Future<Void>> futures = exec.invokeAll(tasks);
+                List<Future<Void>> futures = scrapeExecutor.getThreadPoolExecutor().invokeAll(tasks);
                 for (Future<Void> f : futures) {
                     try { f.get(); } catch (Exception ignored) {}
                 }

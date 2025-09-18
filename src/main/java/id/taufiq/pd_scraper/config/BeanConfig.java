@@ -40,8 +40,14 @@ public class BeanConfig {
     }
 
     @Bean(destroyMethod = "shutdown")
-    public ExecutorService scrapeExecutor() {
+    public org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor() {
         int poolSize = Math.max(1, appProperties.getScrapePoolSize());
-        return Executors.newFixedThreadPool(poolSize);
+        org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor exec = new org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor();
+        exec.setCorePoolSize(poolSize);
+        exec.setMaxPoolSize(poolSize);
+        exec.setQueueCapacity(500);
+        exec.setThreadNamePrefix("scrape-");
+        exec.initialize();
+        return exec;
     }
 }
