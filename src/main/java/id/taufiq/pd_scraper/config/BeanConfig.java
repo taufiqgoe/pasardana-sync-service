@@ -10,6 +10,8 @@ import org.springframework.web.client.RestClient;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Configuration
 public class BeanConfig {
@@ -35,5 +37,17 @@ public class BeanConfig {
                 .defaultHeader(HttpHeaders.AUTHORIZATION, authHeader)
                 .requestFactory(factory)
                 .build();
+    }
+
+    @Bean(destroyMethod = "shutdown")
+    public org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor() {
+        int poolSize = Math.max(1, appProperties.getScrapePoolSize());
+        org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor exec = new org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor();
+        exec.setCorePoolSize(poolSize);
+        exec.setMaxPoolSize(poolSize);
+        exec.setQueueCapacity(500);
+        exec.setThreadNamePrefix("scrape-");
+        exec.initialize();
+        return exec;
     }
 }

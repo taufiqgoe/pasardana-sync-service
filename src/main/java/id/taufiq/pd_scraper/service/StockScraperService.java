@@ -20,6 +20,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
 
 import static java.util.stream.Collectors.toMap;
 
@@ -27,14 +30,20 @@ import static java.util.stream.Collectors.toMap;
 @Service
 public class StockScraperService {
 
+    private static final String STOCK_SEARCH_ALL_URL = "https://pasardana.id/api/StockSearchResult/GetAll?pageBegin=1&pageLength=9000&sortField=Code&sortOrder=ASC";
+    private static final String STOCK_DATA_URL = "https://pasardana.id/api/StockAPI/GetStockData?code=%s&datestart=%s&dateend=%s";
+    
+
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
+    private final org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor;
 
-    public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository) {
+    public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository, org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor) {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
         this.customRepository = customRepository;
+        this.scrapeExecutor = scrapeExecutor;
     }
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
@@ -48,7 +57,7 @@ public class StockScraperService {
         log.info("Starting to scrape stocks");
         LocalDateTime startTime = LocalDateTime.now();
         try {
-            String getAll = get("https://pasardana.id/api/StockSearchResult/GetAll?pageBegin=1&pageLength=9000&sortField=Code&sortOrder=ASC");
+            String getAll = get(STOCK_SEARCH_ALL_URL);
             List<Stock> stocks = objectMapper.readValue(getAll, new TypeReference<>() {
             });
             log.info("Found {} stocks", stocks.size());
@@ -77,40 +86,51 @@ public class StockScraperService {
         log.info("Starting to scrape stock daily");
 
         try {
-            List<Stock> stocks = customRepository.findAll(Stock.class);
+            Set<String> stockCodes = customRepository.findAllStockCodes();
+
+            List<Callable<Void>> tasks = new ArrayList<>();
 
             Map<String, LocalDate> maxDatePerCodeMap = customRepository.findAllStockDailyMaxDatePerCode();
 
-            stocks.parallelStream().forEach(stock -> {
-                try {
-                    String code = stock.getCode();
-                    LocalDate startDate = maxDatePerCodeMap
-                            .getOrDefault(code, LocalDate.of(1995, 1, 1))
-                            .plusDays(1);
+            for (String code : stockCodes) {
+                tasks.add(() -> {
+                    try {
+                        LocalDate startDate = maxDatePerCodeMap
+                                .getOrDefault(code, LocalDate.of(1995, 1, 1))
+                                .plusDays(1);
 
-                    LocalDate endDate = startTime.toLocalDate().plusDays(1);
-                    log.debug("Scraping stock daily for code {} from {} to {}", code, startDate, endDate);
-                    String stockDataRaw = get("https://pasardana.id/api/StockAPI/GetStockData?code=%s&datestart=%s&dateend=%s".formatted(code, startDate, endDate));
-                    List<StockDaily> stockDailies = objectMapper.readValue(stockDataRaw, new TypeReference<>() {
-                    });
+                        LocalDate endDate = startTime.toLocalDate().plusDays(1);
+                        log.debug("Scraping stock daily for code {} from {} to {}", code, startDate, endDate);
+                        String stockDataRaw = get(String.format(STOCK_DATA_URL, code, startDate, endDate));
+                        List<StockDaily> stockDailies = objectMapper.readValue(stockDataRaw, new TypeReference<>() {
+                        });
 
-                    List<StockDaily> uniqueStockDailies = new ArrayList<>(
-                            stockDailies.stream()
-                                    .collect(toMap(
-                                            sd -> sd.getCode() + "|" + sd.getDate(),
-                                            Function.identity(),
-                                            (existing, replacement) -> existing
-                                    ))
-                                    .values());
+                        List<StockDaily> uniqueStockDailies = new ArrayList<>(
+                                stockDailies.stream()
+                                        .collect(toMap(
+                                                sd -> sd.getCode() + "|" + sd.getDate(),
+                                                Function.identity(),
+                                                (existing, replacement) -> existing
+                                        ))
+                                        .values());
 
-                    uniqueStockDailies.forEach(it -> it.setCreatedAt(startTime.toLocalDate()));
+                        uniqueStockDailies.forEach(it -> it.setCreatedAt(startTime.toLocalDate()));
 
-                    log.debug("Inserting {} stock daily data for code {}", uniqueStockDailies.size(), code);
-                    customRepository.insertAll(uniqueStockDailies);
-                } catch (Exception e) {
-                    log.warn("Failed to fetch stock daily for code {}", stock.getCode());
+                        log.debug("Inserting {} stock daily data for code {}", uniqueStockDailies.size(), code);
+                        customRepository.insertAll(uniqueStockDailies);
+                    } catch (Exception e) {
+                        log.warn("Failed to fetch stock daily for code {}", code);
+                    }
+                    return null;
+                });
+            }
+
+                List<Future<Void>> futures = scrapeExecutor.getThreadPoolExecutor().invokeAll(tasks);
+                for (Future<Void> f : futures) {
+                    try { f.get(); } catch (Exception ignored) {}
                 }
-            });
+            
+            
         } catch (Exception e) {
             log.error("Failed to process stock daily", e);
         }
