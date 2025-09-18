@@ -20,9 +20,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Callable;
-import java.util.concurrent.Future;
 
 import static java.util.stream.Collectors.toMap;
 
@@ -37,13 +34,11 @@ public class StockScraperService {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
-    private final org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor;
 
-    public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository, org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor) {
+    public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository) {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
         this.customRepository = customRepository;
-        this.scrapeExecutor = scrapeExecutor;
     }
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
@@ -87,50 +82,38 @@ public class StockScraperService {
 
         try {
             Set<String> stockCodes = customRepository.findAllStockCodes();
-
-            List<Callable<Void>> tasks = new ArrayList<>();
-
             Map<String, LocalDate> maxDatePerCodeMap = customRepository.findAllStockDailyMaxDatePerCode();
 
-            for (String code : stockCodes) {
-                tasks.add(() -> {
-                    try {
-                        LocalDate startDate = maxDatePerCodeMap
-                                .getOrDefault(code, LocalDate.of(1995, 1, 1))
-                                .plusDays(1);
+            stockCodes.parallelStream().forEach(code -> {
+                try {
+                    LocalDate startDate = maxDatePerCodeMap
+                            .getOrDefault(code, LocalDate.of(1995, 1, 1))
+                            .plusDays(1);
 
-                        LocalDate endDate = startTime.toLocalDate().plusDays(1);
-                        log.debug("Scraping stock daily for code {} from {} to {}", code, startDate, endDate);
-                        String stockDataRaw = get(String.format(STOCK_DATA_URL, code, startDate, endDate));
-                        List<StockDaily> stockDailies = objectMapper.readValue(stockDataRaw, new TypeReference<>() {
-                        });
+                    LocalDate endDate = startTime.toLocalDate().plusDays(1);
+                    log.debug("Scraping stock daily for code {} from {} to {}", code, startDate, endDate);
+                    String stockDataRaw = get(String.format(STOCK_DATA_URL, code, startDate, endDate));
+                    List<StockDaily> stockDailies = objectMapper.readValue(stockDataRaw, new TypeReference<>() {
+                    });
 
-                        List<StockDaily> uniqueStockDailies = new ArrayList<>(
-                                stockDailies.stream()
-                                        .collect(toMap(
-                                                sd -> sd.getCode() + "|" + sd.getDate(),
-                                                Function.identity(),
-                                                (existing, replacement) -> existing
-                                        ))
-                                        .values());
+                    List<StockDaily> uniqueStockDailies = new ArrayList<>(
+                            stockDailies.stream()
+                                    .collect(toMap(
+                                            sd -> sd.getCode() + "|" + sd.getDate(),
+                                            Function.identity(),
+                                            (existing, replacement) -> existing
+                                    ))
+                                    .values());
 
-                        uniqueStockDailies.forEach(it -> it.setCreatedAt(startTime.toLocalDate()));
+                    uniqueStockDailies.forEach(it -> it.setCreatedAt(startTime.toLocalDate()));
 
-                        log.debug("Inserting {} stock daily data for code {}", uniqueStockDailies.size(), code);
-                        customRepository.insertAll(uniqueStockDailies);
-                    } catch (Exception e) {
-                        log.warn("Failed to fetch stock daily for code {}", code);
-                    }
-                    return null;
-                });
-            }
-
-                List<Future<Void>> futures = scrapeExecutor.getThreadPoolExecutor().invokeAll(tasks);
-                for (Future<Void> f : futures) {
-                    try { f.get(); } catch (Exception ignored) {}
+                    log.debug("Inserting {} stock daily data for code {}", uniqueStockDailies.size(), code);
+                    customRepository.insertAll(uniqueStockDailies);
+                } catch (Exception e) {
+                    log.warn("Failed to fetch stock daily for code {}", code);
                 }
-            
-            
+            });
+
         } catch (Exception e) {
             log.error("Failed to process stock daily", e);
         }

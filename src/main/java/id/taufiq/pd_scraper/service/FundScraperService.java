@@ -20,11 +20,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Callable;
-import java.util.concurrent.Future;
-import jakarta.annotation.PreDestroy;
 
 @Slf4j
 @Service
@@ -38,20 +33,17 @@ public class FundScraperService {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
-    private final org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor;
 
-    public FundScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository, org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor scrapeExecutor) {
+    public FundScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository) {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
         this.customRepository = customRepository;
-        this.scrapeExecutor = scrapeExecutor;
     }
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
     private void scrapeAll() {
         LocalDateTime startTime = LocalDateTime.now();
 
-        // fetch fund ids once and pass to downstream methods to avoid repeated DB calls
         Set<Integer> allFundIds = null;
         try {
             allFundIds = customRepository.findAllFundIds();
@@ -121,40 +113,26 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            ExecutorService exec = scrapeExecutor;
-            try {
-                List<Callable<Void>> tasks = new ArrayList<>();
-                for (Integer fundId : fundIds) {
-                    tasks.add(() -> {
-                        try {
-                            LocalDate startDate = maxDatePerIdMap
-                                    .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
-                                    .plusDays(1);
+            fundIds.parallelStream().forEach(fundId -> {
+                try {
+                    LocalDate startDate = maxDatePerIdMap
+                            .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
+                            .plusDays(1);
 
-                            log.debug("Scraping fund nav for fund id {} from {} to {}", fundId, startDate, endDate);
-                            String fundNav = get(String.format(FUND_NAV_HISTORIC_URL, fundId, startDate, endDate));
+                    log.debug("Scraping fund nav for fund id {} from {} to {}", fundId, startDate, endDate);
+                    String fundNav = get(String.format(FUND_NAV_HISTORIC_URL, fundId, startDate, endDate));
 
-                            List<FundDaily> fundDailies = objectMapper.readValue(fundNav, new TypeReference<>() {
-                            });
-
-                            if (fundDailies != null && !fundDailies.isEmpty()) {
-                                log.debug("Inserting {} fund daily data for id {}", fundDailies.size(), fundId);
-                                customRepository.insertAll(fundDailies);
-                            }
-                        } catch (Exception e) {
-                            log.warn("Failed to fetch fund daily data for id {}", fundId, e);
-                        }
-                        return null;
+                    List<FundDaily> fundDailies = objectMapper.readValue(fundNav, new TypeReference<>() {
                     });
-                }
 
-                List<Future<Void>> futures = scrapeExecutor.getThreadPoolExecutor().invokeAll(tasks);
-                for (Future<Void> f : futures) {
-                    try { f.get(); } catch (Exception ignored) {}
+                    if (fundDailies != null && !fundDailies.isEmpty()) {
+                        log.debug("Inserting {} fund daily data for id {}", fundDailies.size(), fundId);
+                        customRepository.insertAll(fundDailies);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to fetch fund daily data for id {}", fundId, e);
                 }
-            } finally {
-                exec.shutdown();
-            }
+            });
         } catch (Exception e) {
             log.error("Failed to scrape fund daily data");
         }
@@ -175,40 +153,26 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            ExecutorService exec = scrapeExecutor;
-            try {
-                List<Callable<Void>> tasks = new ArrayList<>();
-                for (Integer fundId : fundIds) {
-                    tasks.add(() -> {
-                        try {
-                            LocalDate startDate = maxDatePerIdMap
-                                    .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
-                                    .plusDays(1);
+            fundIds.parallelStream().forEach(fundId -> {
+                try {
+                    LocalDate startDate = maxDatePerIdMap
+                            .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
+                            .plusDays(1);
 
-                            log.debug("Scraping fund aum for fund id {} from {} to {}", fundId, startDate, endDate);
-                            String fundAumRaw = get(String.format(FUND_AUM_HISTORIC_URL, fundId, startDate, endDate));
+                    log.debug("Scraping fund aum for fund id {} from {} to {}", fundId, startDate, endDate);
+                    String fundAumRaw = get(String.format(FUND_AUM_HISTORIC_URL, fundId, startDate, endDate));
 
-                            List<FundAum> fundAum = objectMapper.readValue(fundAumRaw, new TypeReference<>() {
-                            });
-
-                            if (fundAum != null && !fundAum.isEmpty()) {
-                                log.debug("Inserting {} fund aum data for id {}", fundAum.size(), fundId);
-                                customRepository.insertAll(fundAum);
-                            }
-                        } catch (Exception e) {
-                            log.warn("Failed to fetch fund aum data for id {}", fundId, e);
-                        }
-                        return null;
+                    List<FundAum> fundAum = objectMapper.readValue(fundAumRaw, new TypeReference<>() {
                     });
-                }
 
-                List<Future<Void>> futures = scrapeExecutor.getThreadPoolExecutor().invokeAll(tasks);
-                for (Future<Void> f : futures) {
-                    try { f.get(); } catch (Exception ignored) {}
+                    if (fundAum != null && !fundAum.isEmpty()) {
+                        log.debug("Inserting {} fund aum data for id {}", fundAum.size(), fundId);
+                        customRepository.insertAll(fundAum);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to fetch fund aum data for id {}", fundId, e);
                 }
-            } finally {
-                exec.shutdown();
-            }
+            });
         } catch (Exception e) {
             log.error("Failed to scrape fund aum data");
         }
@@ -232,42 +196,26 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            ExecutorService exec = scrapeExecutor;
+            fundIds.parallelStream().forEach(fundId -> {
+                try {
+                    LocalDate startDate = maxDatePerIdMap
+                            .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
+                            .plusDays(1);
 
-    
-            try {
-                List<Callable<Void>> tasks = new ArrayList<>();
-                for (Integer fundId : fundIds) {
-                    tasks.add(() -> {
-                        try {
-                            LocalDate startDate = maxDatePerIdMap
-                                    .getOrDefault(fundId, LocalDate.of(2000, 1, 1))
-                                    .plusDays(1);
+                    log.debug("Scraping fund unit for fund id {} from {} to {}", fundId, startDate, endDate);
+                    String fundUnitRaw = get(String.format(FUND_UNIT_HISTORIC_URL, fundId, startDate, endDate));
 
-                            log.debug("Scraping fund unit for fund id {} from {} to {}", fundId, startDate, endDate);
-                            String fundUnitRaw = get(String.format(FUND_UNIT_HISTORIC_URL, fundId, startDate, endDate));
-
-                            List<FundUnit> fundUnit = objectMapper.readValue(fundUnitRaw, new TypeReference<>() {
-                            });
-
-                            if (fundUnit != null && !fundUnit.isEmpty()) {
-                                log.debug("Inserting {} fund unit data for id {}", fundUnit.size(), fundId);
-                                customRepository.insertAll(fundUnit);
-                            }
-                        } catch (Exception e) {
-                            log.warn("Failed to fetch fund unit data for id {}", fundId, e);
-                        }
-                        return null;
+                    List<FundUnit> fundUnit = objectMapper.readValue(fundUnitRaw, new TypeReference<>() {
                     });
-                }
 
-                List<Future<Void>> futures = scrapeExecutor.getThreadPoolExecutor().invokeAll(tasks);
-                for (Future<Void> f : futures) {
-                    try { f.get(); } catch (Exception ignored) {}
+                    if (fundUnit != null && !fundUnit.isEmpty()) {
+                        log.debug("Inserting {} fund unit data for id {}", fundUnit.size(), fundId);
+                        customRepository.insertAll(fundUnit);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to fetch fund unit data for id {}", fundId, e);
                 }
-            } finally {
-                exec.shutdown();
-            }
+            });
         } catch (Exception e) {
             log.error("Failed to scrape fund unit data");
         }
