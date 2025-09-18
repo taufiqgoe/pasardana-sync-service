@@ -33,10 +33,16 @@ public class StockScraperService {
 
     private static final String STOCK_SEARCH_ALL_URL = "https://pasardana.id/api/StockSearchResult/GetAll?pageBegin=1&pageLength=9000&sortField=Code&sortOrder=ASC";
     private static final String STOCK_DATA_URL = "https://pasardana.id/api/StockAPI/GetStockData?code=%s&datestart=%s&dateend=%s";
+    private static final int DEFAULT_SCRAPE_POOL_SIZE = 20;
+    private final java.util.concurrent.ExecutorService scrapeExecutor = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
 
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
+    @jakarta.annotation.PreDestroy
+    public void shutdownExecutor() {
+        scrapeExecutor.shutdown();
+    }
 
     public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository) {
         this.objectMapper = objectMapper;
@@ -86,10 +92,7 @@ public class StockScraperService {
         try {
             Set<String> stockCodes = customRepository.findAllStockCodes();
 
-            final int poolSize = 20;
-            ExecutorService exec = Executors.newFixedThreadPool(poolSize);
-            try {
-                List<Callable<Void>> tasks = new ArrayList<>();
+            List<Callable<Void>> tasks = new ArrayList<>();
 
             Map<String, LocalDate> maxDatePerCodeMap = customRepository.findAllStockDailyMaxDatePerCode();
 
@@ -126,13 +129,12 @@ public class StockScraperService {
                 });
             }
 
-                List<Future<Void>> futures = exec.invokeAll(tasks);
+                List<Future<Void>> futures = scrapeExecutor.invokeAll(tasks);
                 for (Future<Void> f : futures) {
                     try { f.get(); } catch (Exception ignored) {}
                 }
-            } finally {
-                exec.shutdown();
-            }
+            
+            
         } catch (Exception e) {
             log.error("Failed to process stock daily", e);
         }

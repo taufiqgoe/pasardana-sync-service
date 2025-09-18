@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
+import jakarta.annotation.PreDestroy;
 
 @Slf4j
 @Service
@@ -38,6 +39,7 @@ public class FundScraperService {
     private final RestClient restClient;
     private final CustomRepository customRepository;
     private static final int DEFAULT_SCRAPE_POOL_SIZE = 20;
+    private final ExecutorService scrapeExecutor = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
 
     public FundScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository) {
         this.objectMapper = objectMapper;
@@ -119,7 +121,7 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            ExecutorService exec = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+            ExecutorService exec = scrapeExecutor;
             try {
                 List<Callable<Void>> tasks = new ArrayList<>();
                 for (Integer fundId : fundIds) {
@@ -173,7 +175,7 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            ExecutorService exec = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+            ExecutorService exec = scrapeExecutor;
             try {
                 List<Callable<Void>> tasks = new ArrayList<>();
                 for (Integer fundId : fundIds) {
@@ -230,7 +232,12 @@ public class FundScraperService {
 
             LocalDate endDate = startTime.toLocalDate().plusDays(1);
 
-            ExecutorService exec = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+            ExecutorService exec = scrapeExecutor;
+
+    @PreDestroy
+    public void shutdownExecutor() {
+        scrapeExecutor.shutdown();
+    }
             try {
                 List<Callable<Void>> tasks = new ArrayList<>();
                 for (Integer fundId : fundIds) {
