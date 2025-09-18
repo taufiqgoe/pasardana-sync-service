@@ -56,6 +56,16 @@ public class CustomRepository {
         return new HashSet<>(jdbcTemplate.queryForList(query, String.class));
     }
 
+    public List<Integer> findAllFundIds() {
+        String query = "select id from funds";
+        return jdbcTemplate.queryForList(query, Integer.class);
+    }
+
+    public List<String> findAllStockCodes() {
+        String query = "select code from stocks";
+        return jdbcTemplate.queryForList(query, String.class);
+    }
+
     public Map<String, LocalDate> findAllStockDailyMaxDatePerCode() {
         String query = "select code, max(\"date\") as date from stock_daily group by code";
         List<CodeDate> maxDatePerCode = jdbcTemplate.query(query, new BeanPropertyRowMapper<>(CodeDate.class));

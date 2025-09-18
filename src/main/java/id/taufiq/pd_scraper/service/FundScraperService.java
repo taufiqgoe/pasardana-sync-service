@@ -25,6 +25,11 @@ import java.util.stream.Collectors;
 @Service
 public class FundScraperService {
 
+    private static final String FUND_SEARCH_URL = "https://pasardana.id/api/FundAPI/SearchFund";
+    private static final String FUND_NAV_HISTORIC_URL = "https://pasardana.id/api/FundAPI/GetFundNAVHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s";
+    private static final String FUND_AUM_HISTORIC_URL = "https://pasardana.id/api/FundAPI/GetFundAUMHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s";
+    private static final String FUND_UNIT_HISTORIC_URL = "https://pasardana.id/api/FundAPI/GetFundUPHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s";
+
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
@@ -38,17 +43,26 @@ public class FundScraperService {
     @Scheduled(cron = "#{@appProperties.syncCron}")
     private void scrapeAll() {
         LocalDateTime startTime = LocalDateTime.now();
+
+        // fetch fund ids once and pass to downstream methods to avoid repeated DB calls
+        List<Integer> allFundIds = null;
+        try {
+            allFundIds = customRepository.findAllFundIds();
+        } catch (Exception e) {
+            log.warn("Failed to fetch funds upfront, methods will fallback to individual fetch", e);
+        }
+
         scrapeFunds();
-        scrapeAllFundNavDaily(startTime);
-        scrapeAllFundAumDaily(startTime);
-        scrapeAllFundUnitDaily(startTime);
+        scrapeAllFundNavDaily(startTime, allFundIds);
+        scrapeAllFundAumDaily(startTime, allFundIds);
+        scrapeAllFundUnitDaily(startTime, allFundIds);
     }
 
     private void scrapeFunds() {
         log.info("Starting to scrape funds");
         LocalDateTime startTime = LocalDateTime.now();
         try {
-            String getAll = get("https://pasardana.id/api/FundAPI/SearchFund");
+            String getAll = get(FUND_SEARCH_URL);
             List<Fund> funds = objectMapper.readValue(getAll, new TypeReference<List<Fund>>() {
                     }).stream()
                     .filter(it -> it.getId() != null && it.getId() > 0)
@@ -86,11 +100,14 @@ public class FundScraperService {
         logEndTime("funds", startTime);
     }
 
-    private void scrapeAllFundNavDaily(LocalDateTime startTime) {
+    private void scrapeAllFundNavDaily(LocalDateTime startTime, List<Integer> fundIdsParam) {
         log.info("Starting to scrape all fund nav daily");
 
         try {
-            List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
+            List<Integer> fundIds = fundIdsParam;
+            if (fundIds == null) {
+                fundIds = customRepository.findAllFundIds();
+            }
             log.info("Found {} funds to scrape for daily nav", fundIds.size());
 
             Map<Integer, LocalDate> maxDatePerIdMap = customRepository.findAllFundDailyMaxDatePerId();
@@ -104,8 +121,7 @@ public class FundScraperService {
 
                 try {
                     log.debug("Scraping fund nav for fund id {} from {} to {}", fundId, startDate, endDate);
-                    String fundNav = get("https://pasardana.id/api/FundAPI/GetFundNAVHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s"
-                            .formatted(fundId, startDate, endDate));
+                    String fundNav = get(String.format(FUND_NAV_HISTORIC_URL, fundId, startDate, endDate));
 
                     List<FundDaily> fundDailies = objectMapper.readValue(fundNav, new TypeReference<>() {
                     });
@@ -124,11 +140,14 @@ public class FundScraperService {
         logEndTime("fund daily data", startTime);
     }
 
-    private void scrapeAllFundAumDaily(LocalDateTime startTime) {
+    private void scrapeAllFundAumDaily(LocalDateTime startTime, List<Integer> fundIdsParam) {
         log.info("Starting to scrape all fund aum daily");
 
         try {
-            List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
+            List<Integer> fundIds = fundIdsParam;
+            if (fundIds == null) {
+                fundIds = customRepository.findAllFundIds();
+            }
             log.info("Found {} funds to scrape for daily aum", fundIds.size());
 
             Map<Integer, LocalDate> maxDatePerIdMap = customRepository.findAllFundAumMaxDatePerId();
@@ -142,8 +161,7 @@ public class FundScraperService {
                             .plusDays(1);
 
                     log.debug("Scraping fund aum for fund id {} from {} to {}", fundId, startDate, endDate);
-                    String fundAumRaw = get("https://pasardana.id/api/FundAPI/GetFundAUMHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s"
-                            .formatted(fundId, startDate, endDate));
+                    String fundAumRaw = get(String.format(FUND_AUM_HISTORIC_URL, fundId, startDate, endDate));
 
                     List<FundAum> fundAum = objectMapper.readValue(fundAumRaw, new TypeReference<>() {
                     });
@@ -162,11 +180,14 @@ public class FundScraperService {
         logEndTime("fund aum data", startTime);
     }
 
-    private void scrapeAllFundUnitDaily(LocalDateTime startTime) {
+    private void scrapeAllFundUnitDaily(LocalDateTime startTime, List<Integer> fundIdsParam) {
         log.info("Starting to scrape all fund unit daily");
 
         try {
-            List<Integer> fundIds = customRepository.findAll(Fund.class).stream().map(Fund::getId).toList();
+            List<Integer> fundIds = fundIdsParam;
+            if (fundIds == null) {
+                fundIds = customRepository.findAllFundIds();
+            }
             log.info("Found {} funds to scrape for daily unit", fundIds.size());
 
             List<CodeDate> maxDatePerId = customRepository.findAllFundUnitMaxDatePerId();
@@ -183,8 +204,7 @@ public class FundScraperService {
                             .plusDays(1);
 
                     log.debug("Scraping fund unit for fund id {} from {} to {}", fundId, startDate, endDate);
-                    String fundUnitRaw = get("https://pasardana.id/api/FundAPI/GetFundUPHistoricData?fundId=%s&dateBegin=%s&dateEnd=%s"
-                            .formatted(fundId, startDate, endDate));
+                    String fundUnitRaw = get(String.format(FUND_UNIT_HISTORIC_URL, fundId, startDate, endDate));
 
                     List<FundUnit> fundUnit = objectMapper.readValue(fundUnitRaw, new TypeReference<>() {
                     });
