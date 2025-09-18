@@ -38,13 +38,13 @@ public class FundScraperService {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
-    private static final int DEFAULT_SCRAPE_POOL_SIZE = 20;
-    private final ExecutorService scrapeExecutor = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+    private final ExecutorService scrapeExecutor;
 
-    public FundScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository) {
+    public FundScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository, ExecutorService scrapeExecutor) {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
         this.customRepository = customRepository;
+        this.scrapeExecutor = scrapeExecutor;
     }
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
@@ -234,10 +234,7 @@ public class FundScraperService {
 
             ExecutorService exec = scrapeExecutor;
 
-    @PreDestroy
-    public void shutdownExecutor() {
-        scrapeExecutor.shutdown();
-    }
+    
             try {
                 List<Callable<Void>> tasks = new ArrayList<>();
                 for (Integer fundId : fundIds) {

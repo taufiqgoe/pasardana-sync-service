@@ -10,6 +10,8 @@ import org.springframework.web.client.RestClient;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Configuration
 public class BeanConfig {
@@ -35,5 +37,11 @@ public class BeanConfig {
                 .defaultHeader(HttpHeaders.AUTHORIZATION, authHeader)
                 .requestFactory(factory)
                 .build();
+    }
+
+    @Bean(destroyMethod = "shutdown")
+    public ExecutorService scrapeExecutor() {
+        int poolSize = 20;
+        return Executors.newFixedThreadPool(poolSize);
     }
 }

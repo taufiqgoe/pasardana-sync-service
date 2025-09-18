@@ -21,7 +21,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 
@@ -33,21 +32,18 @@ public class StockScraperService {
 
     private static final String STOCK_SEARCH_ALL_URL = "https://pasardana.id/api/StockSearchResult/GetAll?pageBegin=1&pageLength=9000&sortField=Code&sortOrder=ASC";
     private static final String STOCK_DATA_URL = "https://pasardana.id/api/StockAPI/GetStockData?code=%s&datestart=%s&dateend=%s";
-    private static final int DEFAULT_SCRAPE_POOL_SIZE = 20;
-    private final java.util.concurrent.ExecutorService scrapeExecutor = Executors.newFixedThreadPool(DEFAULT_SCRAPE_POOL_SIZE);
+    
 
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final CustomRepository customRepository;
-    @jakarta.annotation.PreDestroy
-    public void shutdownExecutor() {
-        scrapeExecutor.shutdown();
-    }
+    private final java.util.concurrent.ExecutorService scrapeExecutor;
 
-    public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository) {
+    public StockScraperService(ObjectMapper objectMapper, RestClient restClient, CustomRepository customRepository, java.util.concurrent.ExecutorService scrapeExecutor) {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
         this.customRepository = customRepository;
+        this.scrapeExecutor = scrapeExecutor;
     }
 
     @Scheduled(cron = "#{@appProperties.syncCron}")
