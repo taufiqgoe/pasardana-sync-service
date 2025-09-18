@@ -56,6 +56,17 @@ public class CustomRepository {
         return new HashSet<>(jdbcTemplate.queryForList(query, String.class));
     }
 
+    public Set<String> findAllExistingBondCodes() {
+        String query = "select distinct code from bonds";
+        return new HashSet<>(jdbcTemplate.queryForList(query, String.class));
+    }
+
+    public Map<String, LocalDate> findAllBondDailyMaxDatePerCode() {
+        String query = "select bond_code as code, max(\"date\") as \"date\" from bond_daily group by bond_code";
+        List<CodeDate> maxDatePerCode = jdbcTemplate.query(query, new BeanPropertyRowMapper<>(CodeDate.class));
+        return maxDatePerCode.stream().collect(toMap(CodeDate::getCode, CodeDate::getDate));
+    }
+
     public Set<Integer> findAllFundIds() {
         String query = "select id from funds";
         return new HashSet<>(jdbcTemplate.queryForList(query, Integer.class));
