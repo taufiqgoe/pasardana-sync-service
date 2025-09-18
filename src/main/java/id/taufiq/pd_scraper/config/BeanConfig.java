@@ -41,7 +41,7 @@ public class BeanConfig {
 
     @Bean(destroyMethod = "shutdown")
     public ExecutorService scrapeExecutor() {
-        int poolSize = 20;
+        int poolSize = Math.max(1, appProperties.getScrapePoolSize());
         return Executors.newFixedThreadPool(poolSize);
     }
 }

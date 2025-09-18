@@ -17,4 +17,5 @@ public class AppProperties {
     private String pasardanaPassword;
     @NotBlank
     private String syncCron;
+    private int scrapePoolSize = 20;
 }
